@@ -123,3 +123,13 @@ This project was primarily inspired by Claude Code, and initially was largely an
 ## Security
 
 Deep Agents follows a "trust the LLM" model. The agent can do anything its tools allow. Enforce boundaries at the tool/sandbox level, not by expecting the model to self-police. See the [security policy](https://github.com/langchain-ai/deepagents?tab=security-ov-file) for more information.
+
+---
+
+## Timeout Configuration
+
+### `MCP_CONNECTION_TIMEOUT`
+Defines the maximum number of seconds allowed to establish a connection with an MCP server before timing out.
+
+### `MCP_TOOL_LOAD_TIMEOUT`
+Defines the maximum number of seconds allowed for loading tools from an MCP server before timing out.
