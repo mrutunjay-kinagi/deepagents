@@ -1,5 +1,6 @@
 """Deep Agents package."""
 
+from deepagents._task_model import TaskComplexity, classify_task
 from deepagents._version import __version__
 from deepagents.graph import create_deep_agent
 from deepagents.middleware.filesystem import FilesystemMiddleware
@@ -12,6 +13,8 @@ __all__ = [
     "MemoryMiddleware",
     "SubAgent",
     "SubAgentMiddleware",
+    "TaskComplexity",
     "__version__",
+    "classify_task",
     "create_deep_agent",
 ]

@@ -26,6 +26,7 @@ from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.skills import SkillsMiddleware
 from deepagents.middleware.subagents import (
     GENERAL_PURPOSE_SUBAGENT,
+    LIGHTWEIGHT_SUBAGENT,
     CompiledSubAgent,
     SubAgent,
     SubAgentMiddleware,
@@ -78,7 +79,7 @@ def get_default_model() -> ChatAnthropic:
     )
 
 
-def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic with many conditional branches
+def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly logic with many conditional branches
     model: str | BaseChatModel | None = None,
     tools: Sequence[BaseTool | Callable | dict[str, Any]] | None = None,
     *,
@@ -96,6 +97,7 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
     debug: bool = False,
     name: str | None = None,
     cache: BaseCache | None = None,
+    lightweight_model: str | BaseChatModel | None = None,
 ) -> CompiledStateGraph:
     """Create a deep agent.
 
@@ -177,6 +179,15 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
         debug: Whether to enable debug mode. Passed through to `create_agent`.
         name: The name of the agent. Passed through to `create_agent`.
         cache: The cache to use for the agent. Passed through to `create_agent`.
+        lightweight_model: An optional faster or cheaper model for the built-in lightweight
+            subagent.
+
+            When provided, a `lightweight` subagent is automatically added alongside the
+            `general-purpose` subagent. The lightweight subagent uses this model and is
+            intended for simple, quick tasks that do not require heavy reasoning.
+
+            Use the `provider:model` format (e.g., `anthropic:claude-haiku-4-5`) or pass
+            a pre-configured `BaseChatModel` instance.
 
     Returns:
         A configured deep agent.
@@ -204,6 +215,28 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
         "tools": tools or [],
         "middleware": gp_middleware,
     }
+
+    # Build lightweight subagent if a lightweight model is provided
+    lw_spec: SubAgent | None = None
+    if lightweight_model is not None:
+        resolved_lw_model = resolve_model(lightweight_model)
+        lw_middleware: list[AgentMiddleware[Any, Any, Any]] = [
+            TodoListMiddleware(),
+            FilesystemMiddleware(backend=backend),
+            create_summarization_middleware(resolved_lw_model, backend),
+            AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+            PatchToolCallsMiddleware(),
+        ]
+        if skills is not None:
+            lw_middleware.append(SkillsMiddleware(backend=backend, sources=skills))
+        if interrupt_on is not None:
+            lw_middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
+        lw_spec = {  # ty: ignore[missing-typed-dict-key]
+            **LIGHTWEIGHT_SUBAGENT,
+            "model": resolved_lw_model,
+            "tools": tools or [],
+            "middleware": lw_middleware,
+        }
 
     # Process user-provided subagents to fill in defaults for model, tools, and middleware
     processed_subagents: list[SubAgent | CompiledSubAgent] = []
@@ -237,13 +270,18 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
             }
             processed_subagents.append(processed_spec)
 
-    if any(spec["name"] == GENERAL_PURPOSE_SUBAGENT["name"] for spec in processed_subagents):
-        # If an agent with general purpose name already exists in subagents, then don't add it
-        # This is how you overwrite/configure general purpose subagent
-        all_subagents: list[SubAgent | CompiledSubAgent] = processed_subagents
+    # Determine which built-in subagents to include
+    user_agent_names = {spec["name"] for spec in processed_subagents}
+
+    if GENERAL_PURPOSE_SUBAGENT["name"] in user_agent_names:
+        # User has provided a custom general-purpose agent; don't add the built-in one
+        all_subagents: list[SubAgent | CompiledSubAgent] = list(processed_subagents)
     else:
-        # Otherwise - add it!
         all_subagents = [general_purpose_spec, *processed_subagents]
+
+    # Add lightweight subagent if configured and not overridden by the user
+    if lw_spec is not None and LIGHTWEIGHT_SUBAGENT["name"] not in user_agent_names:
+        all_subagents = [*all_subagents, lw_spec]
 
     # Build main agent middleware stack
     deepagent_middleware: list[AgentMiddleware[Any, Any, Any]] = [

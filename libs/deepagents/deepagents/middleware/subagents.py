@@ -274,6 +274,19 @@ GENERAL_PURPOSE_SUBAGENT: SubAgent = {
     "system_prompt": DEFAULT_SUBAGENT_PROMPT,
 }
 
+DEFAULT_LIGHTWEIGHT_DESCRIPTION = "Lightweight agent for quick, simple tasks such as short lookups, single-step calculations, formatting, and other low-complexity operations that do not require multi-step reasoning or heavy context usage. Prefer this agent for fast, focused tasks where speed matters more than depth."  # noqa: E501
+
+DEFAULT_LIGHTWEIGHT_SUBAGENT_PROMPT = (
+    "You are a fast, focused assistant. Complete the task directly and concisely using the tools available to you. Avoid unnecessary reasoning steps."  # noqa: E501
+)
+
+# Base spec for lightweight subagent (caller adds model, tools, middleware)
+LIGHTWEIGHT_SUBAGENT: SubAgent = {
+    "name": "lightweight",
+    "description": DEFAULT_LIGHTWEIGHT_DESCRIPTION,
+    "system_prompt": DEFAULT_LIGHTWEIGHT_SUBAGENT_PROMPT,
+}
+
 
 class _SubagentSpec(TypedDict):
     """Internal spec for building the task tool."""

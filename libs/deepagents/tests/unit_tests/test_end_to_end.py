@@ -23,6 +23,7 @@ from deepagents.backends.store import StoreBackend
 from deepagents.backends.utils import TOOL_RESULT_TOKEN_LIMIT
 from deepagents.graph import create_deep_agent
 from deepagents.middleware.filesystem import NUM_CHARS_PER_TOKEN
+from deepagents.middleware.subagents import LIGHTWEIGHT_SUBAGENT, SubAgent
 from tests.utils import SampleMiddlewareWithTools, SampleMiddlewareWithToolsAndState, assert_all_deepagent_qualities
 
 
@@ -1204,3 +1205,44 @@ class TestDeepAgentStructure:
         assert_all_deepagent_qualities(agent)
         assert "sample_tool" in agent.nodes["tools"].bound._tools_by_name
         assert "sample_input" in agent.stream_channels
+
+    def test_deep_agent_without_lightweight_model_has_no_lightweight_subagent(self) -> None:
+        """Verifies that no lightweight subagent is added when lightweight_model is not set."""
+        agent = create_deep_agent()
+        task_tool = agent.nodes["tools"].bound._tools_by_name.get("task")
+        assert task_tool is not None
+        # The task tool description should NOT mention a "lightweight" agent
+        assert LIGHTWEIGHT_SUBAGENT["name"] not in task_tool.description
+
+    def test_deep_agent_with_lightweight_model_adds_lightweight_subagent(self) -> None:
+        """Verifies that a lightweight subagent is added when lightweight_model is provided."""
+        fake_lw_model = FixedGenericFakeChatModel(messages=iter([]))
+        agent = create_deep_agent(lightweight_model=fake_lw_model)
+        assert_all_deepagent_qualities(agent)
+        task_tool = agent.nodes["tools"].bound._tools_by_name.get("task")
+        assert task_tool is not None
+        assert LIGHTWEIGHT_SUBAGENT["name"] in task_tool.description
+
+    def test_deep_agent_lightweight_model_does_not_replace_general_purpose(self) -> None:
+        """Verifies that providing a lightweight_model keeps the general-purpose subagent."""
+        fake_lw_model = FixedGenericFakeChatModel(messages=iter([]))
+        agent = create_deep_agent(lightweight_model=fake_lw_model)
+        task_tool = agent.nodes["tools"].bound._tools_by_name.get("task")
+        assert task_tool is not None
+        # Both agents must appear in the tool description
+        assert "general-purpose" in task_tool.description
+        assert LIGHTWEIGHT_SUBAGENT["name"] in task_tool.description
+
+    def test_deep_agent_user_lightweight_subagent_overrides_builtin(self) -> None:
+        """Verifies that a user-provided lightweight subagent replaces the built-in one."""
+        fake_lw_model = FixedGenericFakeChatModel(messages=iter([]))
+        custom_lw: SubAgent = {  # type: ignore[misc]
+            "name": LIGHTWEIGHT_SUBAGENT["name"],
+            "description": "My custom lightweight agent",
+            "system_prompt": "Custom prompt",
+        }
+        agent = create_deep_agent(lightweight_model=fake_lw_model, subagents=[custom_lw])
+        task_tool = agent.nodes["tools"].bound._tools_by_name.get("task")
+        assert task_tool is not None
+        # The user's description wins; the built-in one should NOT appear
+        assert "My custom lightweight agent" in task_tool.description
