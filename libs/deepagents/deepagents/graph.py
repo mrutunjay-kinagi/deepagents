@@ -26,6 +26,7 @@ from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.skills import SkillsMiddleware
 from deepagents.middleware.subagents import (
     GENERAL_PURPOSE_SUBAGENT,
+    LIGHTWEIGHT_SUBAGENT,
     CompiledSubAgent,
     SubAgent,
     SubAgentMiddleware,
@@ -78,10 +79,11 @@ def get_default_model() -> ChatAnthropic:
     )
 
 
-def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic with many conditional branches
+def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly logic with many conditional branches
     model: str | BaseChatModel | None = None,
     tools: Sequence[BaseTool | Callable | dict[str, Any]] | None = None,
     *,
+    lightweight_model: str | BaseChatModel | None = None,
     system_prompt: str | SystemMessage | None = None,
     middleware: Sequence[AgentMiddleware] = (),
     subagents: list[SubAgent | CompiledSubAgent] | None = None,
@@ -130,6 +132,16 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
 
             In addition to custom tools you provide, deep agents include built-in tools for planning,
             file management, and subagent spawning.
+        lightweight_model: Optional cheaper/faster model for lightweight sub-agent tasks.
+
+            When provided, a `"lightweight"` sub-agent is automatically added alongside the
+            default `"general-purpose"` sub-agent. The `"lightweight"` sub-agent uses this model
+            and is described to the orchestrating agent as being suited for simple, fast operations
+            such as directory browsing, file reads, and metadata lookups.
+
+            Use the same `provider:model` format as `model` (e.g., `"openai:gpt-4o-mini"`).
+            The orchestrating agent will dynamically choose between the `"lightweight"` and
+            `"general-purpose"` sub-agents based on the task description.
         system_prompt: Custom system instructions to prepend before the base deep agent
             prompt.
 
@@ -182,6 +194,7 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
         A configured deep agent.
     """
     model = get_default_model() if model is None else resolve_model(model)
+    resolved_lightweight_model = resolve_model(lightweight_model) if lightweight_model is not None else None
 
     backend = backend if backend is not None else (StateBackend)
 
@@ -204,6 +217,28 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
         "tools": tools or [],
         "middleware": gp_middleware,
     }
+
+    # Build lightweight subagent when a cheaper model is provided
+    lightweight_spec: SubAgent | None = None
+    if resolved_lightweight_model is not None:
+        lw_middleware: list[AgentMiddleware[Any, Any, Any]] = [
+            TodoListMiddleware(),
+            FilesystemMiddleware(backend=backend),
+            create_summarization_middleware(resolved_lightweight_model, backend),
+            AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+            PatchToolCallsMiddleware(),
+        ]
+        if skills is not None:
+            lw_middleware.append(SkillsMiddleware(backend=backend, sources=skills))
+        if interrupt_on is not None:
+            lw_middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
+
+        lightweight_spec = {  # ty: ignore[missing-typed-dict-key]
+            **LIGHTWEIGHT_SUBAGENT,
+            "model": resolved_lightweight_model,
+            "tools": tools or [],
+            "middleware": lw_middleware,
+        }
 
     # Process user-provided subagents to fill in defaults for model, tools, and middleware
     processed_subagents: list[SubAgent | CompiledSubAgent] = []
@@ -244,6 +279,11 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
     else:
         # Otherwise - add it!
         all_subagents = [general_purpose_spec, *processed_subagents]
+
+    # Append lightweight sub-agent when a cheaper model was requested and the caller
+    # has not already defined a sub-agent with the same name.
+    if lightweight_spec is not None and not any(spec["name"] == LIGHTWEIGHT_SUBAGENT["name"] for spec in all_subagents):
+        all_subagents = [*all_subagents, lightweight_spec]
 
     # Build main agent middleware stack
     deepagent_middleware: list[AgentMiddleware[Any, Any, Any]] = [

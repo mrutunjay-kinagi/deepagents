@@ -1204,3 +1204,34 @@ class TestDeepAgentStructure:
         assert_all_deepagent_qualities(agent)
         assert "sample_tool" in agent.nodes["tools"].bound._tools_by_name
         assert "sample_input" in agent.stream_channels
+
+    def test_deep_agent_lightweight_model_adds_lightweight_subagent(self) -> None:
+        """Verifies that providing lightweight_model adds a 'lightweight' sub-agent."""
+        from deepagents.middleware.subagents import LIGHTWEIGHT_SUBAGENT
+
+        fake_lightweight = FixedGenericFakeChatModel(messages=iter([]))
+
+        agent = create_deep_agent(lightweight_model=fake_lightweight)
+
+        task_tool = agent.nodes["tools"].bound._tools_by_name["task"]
+        assert LIGHTWEIGHT_SUBAGENT["name"] in task_tool.description
+
+    def test_deep_agent_without_lightweight_model_no_lightweight_subagent(self) -> None:
+        """Verifies that omitting lightweight_model does not add a 'lightweight' sub-agent."""
+        from deepagents.middleware.subagents import LIGHTWEIGHT_SUBAGENT
+
+        agent = create_deep_agent()
+        task_tool = agent.nodes["tools"].bound._tools_by_name["task"]
+        assert LIGHTWEIGHT_SUBAGENT["name"] not in task_tool.description
+
+    def test_deep_agent_lightweight_model_string(self) -> None:
+        """Verifies that a string lightweight_model is resolved and the agent is created."""
+        from deepagents.middleware.subagents import LIGHTWEIGHT_SUBAGENT
+
+        fake_lightweight = FixedGenericFakeChatModel(messages=iter([]))
+
+        with patch("deepagents.graph.resolve_model", return_value=fake_lightweight):
+            agent = create_deep_agent(lightweight_model="openai:gpt-4o-mini")
+
+        task_tool = agent.nodes["tools"].bound._tools_by_name["task"]
+        assert LIGHTWEIGHT_SUBAGENT["name"] in task_tool.description
