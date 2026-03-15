@@ -267,10 +267,19 @@ When NOT to use the task tool:
 
 DEFAULT_GENERAL_PURPOSE_DESCRIPTION = "General-purpose agent for researching complex questions, searching for files and content, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. This agent has access to all tools as the main agent."  # noqa: E501
 
+DEFAULT_LIGHTWEIGHT_DESCRIPTION = "Lightweight agent optimized for fast, simple operations: browsing directories, reading files, fetching metadata, and performing quick lookups or searches. Prefer this agent over the general-purpose agent for tasks that do not require deep reasoning or multi-step computation."  # noqa: E501
+
 # Base spec for general-purpose subagent (caller adds model, tools, middleware)
 GENERAL_PURPOSE_SUBAGENT: SubAgent = {
     "name": "general-purpose",
     "description": DEFAULT_GENERAL_PURPOSE_DESCRIPTION,
+    "system_prompt": DEFAULT_SUBAGENT_PROMPT,
+}
+
+# Base spec for the lightweight subagent (caller adds model, tools, middleware)
+LIGHTWEIGHT_SUBAGENT: SubAgent = {
+    "name": "lightweight",
+    "description": DEFAULT_LIGHTWEIGHT_DESCRIPTION,
     "system_prompt": DEFAULT_SUBAGENT_PROMPT,
 }
 
